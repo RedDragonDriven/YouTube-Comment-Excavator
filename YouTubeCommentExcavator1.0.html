@@ -1,0 +1,1449 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>YT Comment Excavator</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;700;800&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0a0a0b;
+    --surface: #111114;
+    --border: #222228;
+    --border-hi: #3a3a44;
+    --red: #ff3333;
+    --red-dim: #ff333322;
+    --amber: #ffaa00;
+    --green: #00dd88;
+    --text: #e8e8f0;
+    --muted: #6b6b7e;
+    --mono: 'IBM Plex Mono', monospace;
+    --sans: 'Syne', sans-serif;
+  }
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--sans);
+    min-height: 100vh;
+    padding: 0;
+  }
+
+  /* Scanline overlay */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background: repeating-linear-gradient(
+      0deg,
+      transparent,
+      transparent 2px,
+      rgba(0,0,0,0.03) 2px,
+      rgba(0,0,0,0.03) 4px
+    );
+    pointer-events: none;
+    z-index: 1000;
+  }
+
+  header {
+    border-bottom: 1px solid var(--border);
+    padding: 28px 48px;
+    display: flex;
+    align-items: center;
+    gap: 20px;
+    position: sticky;
+    top: 0;
+    background: var(--bg);
+    z-index: 100;
+  }
+
+  .logo-mark {
+    width: 40px;
+    height: 40px;
+    background: var(--red);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+  }
+
+  .logo-mark svg { width: 22px; height: 22px; fill: white; }
+
+  header h1 {
+    font-size: 1.1rem;
+    font-weight: 800;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+  }
+
+  header .sub {
+    font-family: var(--mono);
+    font-size: 0.7rem;
+    color: var(--muted);
+    letter-spacing: 0.05em;
+  }
+
+  .main-layout {
+    display: grid;
+    grid-template-columns: 340px 1fr;
+    min-height: calc(100vh - 89px);
+  }
+
+  /* SIDEBAR */
+  .sidebar {
+    border-right: 1px solid var(--border);
+    padding: 32px 28px;
+    display: flex;
+    flex-direction: column;
+    gap: 24px;
+  }
+
+  .field-group {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  label {
+    font-family: var(--mono);
+    font-size: 0.65rem;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+
+  input, select {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    color: var(--text);
+    font-family: var(--mono);
+    font-size: 0.82rem;
+    padding: 10px 14px;
+    outline: none;
+    transition: border-color 0.15s;
+    width: 100%;
+  }
+
+  input:focus, select:focus {
+    border-color: var(--red);
+    box-shadow: 0 0 0 2px var(--red-dim);
+  }
+
+  input::placeholder { color: var(--muted); }
+
+  .hint {
+    font-family: var(--mono);
+    font-size: 0.62rem;
+    color: var(--muted);
+    line-height: 1.5;
+  }
+
+  .hint a { color: var(--amber); text-decoration: none; }
+  .hint a:hover { text-decoration: underline; }
+
+  .divider {
+    height: 1px;
+    background: var(--border);
+  }
+
+  .run-btn {
+    background: var(--red);
+    color: white;
+    border: none;
+    font-family: var(--sans);
+    font-weight: 800;
+    font-size: 0.85rem;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    padding: 14px;
+    cursor: pointer;
+    transition: background 0.15s, transform 0.1s;
+    width: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+  }
+
+  .run-btn:hover { background: #ff5555; }
+  .run-btn:active { transform: scale(0.98); }
+  .run-btn:disabled { background: #442222; color: #884444; cursor: not-allowed; }
+
+  .run-btn .spinner {
+    width: 14px; height: 14px;
+    border: 2px solid rgba(255,255,255,0.3);
+    border-top-color: white;
+    border-radius: 50%;
+    animation: spin 0.7s linear infinite;
+    display: none;
+  }
+
+  .run-btn.loading .spinner { display: block; }
+  .run-btn.loading .btn-text { display: none; }
+
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .export-btn {
+    background: transparent;
+    color: var(--green);
+    border: 1px solid var(--green);
+    font-family: var(--mono);
+    font-size: 0.72rem;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    padding: 10px;
+    cursor: pointer;
+    transition: background 0.15s;
+    width: 100%;
+    display: none;
+  }
+
+  .export-btn:hover { background: rgba(0,221,136,0.08); }
+
+  /* STATUS */
+  .status-panel {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    padding: 14px;
+    font-family: var(--mono);
+    font-size: 0.72rem;
+    color: var(--muted);
+    line-height: 1.8;
+    max-height: 180px;
+    overflow-y: auto;
+    display: none;
+  }
+
+  .status-panel.visible { display: block; }
+
+  .log-line { display: flex; gap: 8px; }
+  .log-line .tag { flex-shrink: 0; }
+  .tag-ok { color: var(--green); }
+  .tag-warn { color: var(--amber); }
+  .tag-err { color: var(--red); }
+  .tag-info { color: #5588ff; }
+
+  /* MAIN CONTENT */
+  .content {
+    display: flex;
+    flex-direction: column;
+  }
+
+  .content-header {
+    border-bottom: 1px solid var(--border);
+    padding: 20px 36px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    min-height: 65px;
+  }
+
+  .result-meta {
+    font-family: var(--mono);
+    font-size: 0.72rem;
+    color: var(--muted);
+  }
+
+  .result-meta strong { color: var(--text); }
+
+  .filter-bar {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+  }
+
+  .filter-bar input {
+    width: 220px;
+    padding: 7px 12px;
+    font-size: 0.75rem;
+  }
+
+  .sort-select {
+    padding: 7px 12px;
+    font-size: 0.75rem;
+    width: auto;
+  }
+
+  /* EMPTY / IDLE */
+  .idle-screen {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 16px;
+    opacity: 0.35;
+    padding: 60px;
+  }
+
+  .idle-screen .big-icon {
+    width: 64px; height: 64px;
+    border: 1px solid var(--border-hi);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .idle-screen p {
+    font-family: var(--mono);
+    font-size: 0.75rem;
+    text-align: center;
+    line-height: 1.8;
+    max-width: 320px;
+  }
+
+  /* COMMENTS LIST */
+  .comments-area {
+    flex: 1;
+    overflow-y: auto;
+    padding: 0;
+    display: none;
+  }
+
+  .comments-area.visible { display: block; }
+
+  .video-section {
+    border-bottom: 1px solid var(--border);
+  }
+
+  .video-section-header {
+    padding: 16px 36px;
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    cursor: pointer;
+    user-select: none;
+    transition: background 0.12s;
+  }
+
+  .video-section-header:hover { background: #16161a; }
+
+  .video-thumb {
+    width: 64px;
+    height: 36px;
+    object-fit: cover;
+    flex-shrink: 0;
+    background: var(--border);
+  }
+
+  .video-info { flex: 1; min-width: 0; }
+
+  .video-title {
+    font-size: 0.82rem;
+    font-weight: 700;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .video-meta-line {
+    font-family: var(--mono);
+    font-size: 0.65rem;
+    color: var(--muted);
+    margin-top: 3px;
+  }
+
+  .video-comment-count {
+    font-family: var(--mono);
+    font-size: 0.72rem;
+    color: var(--amber);
+    flex-shrink: 0;
+  }
+
+  .chevron {
+    color: var(--muted);
+    transition: transform 0.2s;
+    flex-shrink: 0;
+  }
+
+  .video-section.collapsed .chevron { transform: rotate(-90deg); }
+  .video-section.collapsed .comments-list { display: none; }
+
+  .comments-list { list-style: none; }
+
+  .comment-item {
+    padding: 18px 36px;
+    border-bottom: 1px solid var(--border);
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: 14px;
+    animation: fadeIn 0.2s ease both;
+    transition: background 0.12s;
+  }
+
+  .comment-item:hover { background: #0e0e12; }
+
+  @keyframes fadeIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+
+  .avatar {
+    width: 34px;
+    height: 34px;
+    border-radius: 50%;
+    background: var(--border);
+    flex-shrink: 0;
+    object-fit: cover;
+  }
+
+  .comment-body {}
+
+  .comment-author {
+    font-size: 0.78rem;
+    font-weight: 700;
+    color: var(--red);
+    margin-bottom: 4px;
+  }
+
+  .comment-text {
+    font-size: 0.85rem;
+    line-height: 1.65;
+    color: var(--text);
+    word-break: break-word;
+  }
+
+  .comment-footer {
+    margin-top: 8px;
+    display: flex;
+    gap: 16px;
+    align-items: center;
+  }
+
+  .comment-date {
+    font-family: var(--mono);
+    font-size: 0.62rem;
+    color: var(--muted);
+  }
+
+  .like-badge {
+    font-family: var(--mono);
+    font-size: 0.62rem;
+    color: var(--muted);
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+
+  .like-badge svg { width: 10px; height: 10px; fill: var(--muted); }
+
+  .video-link {
+    font-family: var(--mono);
+    font-size: 0.62rem;
+    color: #5588ff;
+    text-decoration: none;
+  }
+
+  .video-link:hover { text-decoration: underline; }
+
+  /* TABS */
+  .tab-bar {
+    display: flex;
+    border-bottom: 1px solid var(--border);
+    background: var(--bg);
+  }
+
+  .tab-btn {
+    font-family: var(--mono);
+    font-size: 0.72rem;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    padding: 14px 24px;
+    background: none;
+    border: none;
+    color: var(--muted);
+    cursor: pointer;
+    border-bottom: 2px solid transparent;
+    margin-bottom: -1px;
+    transition: color 0.15s, border-color 0.15s;
+  }
+
+  .tab-btn:hover { color: var(--text); }
+  .tab-btn.active { color: var(--text); border-bottom-color: var(--red); }
+
+  /* ACTIVITY FEED */
+  .activity-area {
+    flex: 1;
+    overflow-y: auto;
+    display: none;
+  }
+
+  .activity-area.visible { display: block; }
+
+  .activity-item {
+    display: grid;
+    grid-template-columns: 44px 1fr;
+    gap: 14px;
+    padding: 18px 36px;
+    border-bottom: 1px solid var(--border);
+    animation: fadeIn 0.2s ease both;
+    transition: background 0.12s;
+    align-items: start;
+  }
+
+  .activity-item:hover { background: #0e0e12; }
+
+  .activity-icon {
+    width: 34px;
+    height: 34px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    flex-shrink: 0;
+  }
+
+  .activity-icon svg { width: 16px; height: 16px; }
+  .act-upload  .activity-icon { border-color: #ff333344; color: var(--red); }
+  .act-like    .activity-icon { border-color: #ffaa0044; color: var(--amber); }
+  .act-sub     .activity-icon { border-color: #00dd8844; color: var(--green); }
+  .act-playlist .activity-icon { border-color: #5588ff44; color: #5588ff; }
+  .act-other   .activity-icon { color: var(--muted); }
+
+  .activity-title {
+    font-size: 0.85rem;
+    font-weight: 700;
+    line-height: 1.4;
+    margin-bottom: 4px;
+  }
+
+  .activity-title a { color: var(--text); text-decoration: none; }
+  .activity-title a:hover { color: var(--red); }
+
+  .activity-sub {
+    font-family: var(--mono);
+    font-size: 0.65rem;
+    color: var(--muted);
+    margin-bottom: 6px;
+  }
+
+  .activity-type-tag {
+    display: inline-block;
+    font-family: var(--mono);
+    font-size: 0.6rem;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    padding: 2px 7px;
+    border: 1px solid var(--border-hi);
+    color: var(--muted);
+    margin-top: 2px;
+  }
+
+  .act-upload  .activity-type-tag { border-color: #ff333444; color: var(--red); }
+  .act-like    .activity-type-tag { border-color: #ffaa0044; color: var(--amber); }
+  .act-sub     .activity-type-tag { border-color: #00dd8844; color: var(--green); }
+  .act-playlist .activity-type-tag { border-color: #5588ff44; color: #5588ff; }
+
+  .act-thumb {
+    width: 100%;
+    max-width: 160px;
+    height: auto;
+    margin-top: 8px;
+    display: block;
+    border: 1px solid var(--border);
+  }
+
+  .activity-meta-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 14px 36px;
+    border-bottom: 1px solid var(--border);
+    min-height: 53px;
+  }
+
+  .load-activity-btn {
+    background: transparent;
+    color: var(--amber);
+    border: 1px solid var(--amber);
+    font-family: var(--mono);
+    font-size: 0.7rem;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    padding: 7px 16px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    transition: background 0.15s;
+  }
+
+  .load-activity-btn:hover { background: rgba(255,170,0,0.08); }
+  .load-activity-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+  .load-activity-btn .spinner {
+    width: 11px; height: 11px;
+    border: 1.5px solid rgba(255,170,0,0.3);
+    border-top-color: var(--amber);
+    border-radius: 50%;
+    animation: spin 0.7s linear infinite;
+    display: none;
+  }
+
+  .load-activity-btn.loading .spinner { display: block; }
+  .load-activity-btn.loading .btn-label { display: none; }
+
+  .quota-counter {
+    border: 1px solid var(--border);
+    padding: 12px 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .quota-counter-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+
+  .quota-counter-label {
+    font-family: var(--mono);
+    font-size: 0.62rem;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+
+  .quota-reset-btn {
+    font-family: var(--mono);
+    font-size: 0.6rem;
+    color: var(--muted);
+    background: none;
+    border: none;
+    cursor: pointer;
+    padding: 0;
+    text-decoration: underline dotted;
+  }
+
+  .quota-reset-btn:hover { color: var(--text); }
+
+  .quota-number {
+    font-family: var(--mono);
+    font-size: 1.6rem;
+    font-weight: 500;
+    color: var(--text);
+    line-height: 1;
+    transition: color 0.3s;
+  }
+
+  .quota-number.warn  { color: var(--amber); }
+  .quota-number.danger { color: var(--red); }
+
+  .quota-track {
+    height: 3px;
+    background: var(--border);
+    border-radius: 0;
+    overflow: hidden;
+  }
+
+  .quota-fill {
+    height: 100%;
+    width: 0%;
+    background: var(--green);
+    transition: width 0.4s ease, background 0.3s;
+  }
+
+  .quota-breakdown {
+    font-family: var(--mono);
+    font-size: 0.62rem;
+    color: var(--muted);
+    line-height: 1.7;
+  }
+
+  .quota-breakdown span { color: var(--text); }
+
+
+  ::-webkit-scrollbar { width: 4px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--border-hi); }
+  ::-webkit-scrollbar-thumb:hover { background: var(--muted); }
+
+  /* Error toast */
+  .toast {
+    position: fixed;
+    bottom: 28px;
+    right: 28px;
+    background: #330a0a;
+    border: 1px solid var(--red);
+    color: var(--red);
+    font-family: var(--mono);
+    font-size: 0.75rem;
+    padding: 14px 18px;
+    max-width: 360px;
+    line-height: 1.5;
+    z-index: 9999;
+    animation: slideUp 0.3s ease;
+    display: none;
+  }
+
+  .toast.visible { display: block; }
+  @keyframes slideUp { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+
+  @media (max-width: 860px) {
+    .main-layout { grid-template-columns: 1fr; }
+    .sidebar { border-right: none; border-bottom: 1px solid var(--border); }
+    header { padding: 20px 20px; }
+    .comment-item, .video-section-header, .content-header { padding-left: 20px; padding-right: 20px; }
+    .filter-bar { flex-wrap: wrap; }
+    .filter-bar input { width: 100%; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo-mark">
+    <svg viewBox="0 0 24 24"><path d="M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z"/></svg>
+  </div>
+  <div>
+    <h1>YT Comment Excavator</h1>
+    <div class="sub">Surface every comment a channel has made across YouTube search results</div>
+  </div>
+</header>
+
+<div class="main-layout">
+
+  <!-- SIDEBAR -->
+  <aside class="sidebar">
+    <div class="field-group">
+      <label for="apiKey">YouTube Data API v3 Key</label>
+      <input type="password" id="apiKey" placeholder="AIzaSy…" autocomplete="off">
+      <div class="hint">
+        Get a key at <a href="https://console.cloud.google.com/" target="_blank">console.cloud.google.com</a> → APIs &amp; Services → YouTube Data API v3
+      </div>
+    </div>
+
+    <div class="divider"></div>
+
+    <div class="field-group">
+      <label for="searchQuery">Search Query</label>
+      <input type="text" id="searchQuery" placeholder="e.g. javascript tutorials">
+    </div>
+
+    <div class="field-group">
+      <label for="maxVideos">Max Videos to Search</label>
+      <select id="maxVideos" onchange="updateQuotaEstimate()">
+        <option value="10">10 videos</option>
+        <option value="25" selected>25 videos</option>
+        <option value="50">50 videos</option>
+        <option value="100">100 videos</option>
+        <option value="250">250 videos</option>
+        <option value="500">500 videos</option>
+        <option value="custom">Custom…</option>
+      </select>
+      <label for="maxVideosCustom" style="position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap">Custom max videos</label>
+      <input type="number" id="maxVideosCustom" min="1" max="2000"
+        placeholder="Enter number (max 2000)"
+        style="display:none;margin-top:6px"
+        oninput="updateQuotaEstimate()">
+      <div class="hint" id="quotaHint" style="margin-top:6px">
+        Estimated quota: <span id="quotaEst" style="color:var(--amber)">—</span>
+        <span id="quotaWarn" style="color:var(--red);display:none"> ⚠ approaches daily limit</span>
+      </div>
+    </div>
+
+    <div class="field-group">
+      <label for="concurrency">Parallel Workers — <span id="concurrencyLabel">5</span></label>
+      <input type="range" id="concurrency" min="1" max="10" value="5"
+        style="padding:0;background:transparent;border:none;accent-color:var(--red);cursor:pointer"
+        oninput="document.getElementById('concurrencyLabel').textContent=this.value">
+      <div class="hint">Higher = faster, but risks API quota errors. 5 is a safe default.</div>
+    </div>
+
+    <div class="divider"></div>
+
+    <div class="field-group">
+      <label for="channelInput">Channel to Find Comments By</label>
+      <input type="text" id="channelInput" placeholder="Channel ID or display name">
+      <div class="hint">
+        Enter a <strong style="color:var(--text)">Channel ID</strong> (e.g. UCxxxxxx) for exact match, or a <strong style="color:var(--text)">display name</strong> for fuzzy match.<br><br>
+        To find a channel ID: open the channel page → view source → search for "channelId".
+      </div>
+    </div>
+
+    <button class="run-btn" id="runBtn" onclick="run()">
+      <div class="spinner"></div>
+      <span class="btn-text">⬡ Excavate Comments</span>
+    </button>
+
+    <button class="export-btn" id="exportBtn" onclick="exportResults()">↓ Export results as HTML</button>
+
+    <div class="quota-counter">
+      <div class="quota-counter-header">
+        <span class="quota-counter-label">Units used — this session</span>
+        <button class="quota-reset-btn" onclick="resetQuota()" title="Reset session counter">reset</button>
+      </div>
+      <div class="quota-number" id="quotaUsedNum">0</div>
+      <div class="quota-track"><div class="quota-fill" id="quotaFill"></div></div>
+      <div class="quota-breakdown" id="quotaBreakdown">
+        No API calls made yet.
+      </div>
+    </div>
+
+    <div class="status-panel" id="statusPanel"></div>
+  </aside>
+
+  <!-- MAIN -->
+  <main class="content">
+
+    <!-- Tab bar -->
+    <div class="tab-bar">
+      <button class="tab-btn active" id="tabComments" onclick="switchTab('comments')">
+        ⬡ Comment Search
+      </button>
+      <button class="tab-btn" id="tabActivity" onclick="switchTab('activity')">
+        ◈ Channel Activity
+      </button>
+    </div>
+
+    <!-- ── COMMENTS TAB ── -->
+    <div id="panelComments" style="display:flex;flex-direction:column;flex:1;overflow:hidden">
+      <div class="content-header">
+        <div class="result-meta" id="resultMeta">Configure your search and click Excavate.</div>
+        <div class="filter-bar" id="filterBar" style="display:none">
+          <input type="text" id="filterInput" placeholder="Filter comments…" oninput="filterComments()" />
+          <select class="sort-select" id="sortSelect" onchange="sortComments()">
+            <option value="recent">Most Recent</option>
+            <option value="oldest">Oldest First</option>
+            <option value="likes">Most Liked</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="progress-bar-wrap" id="progressWrap" style="display:none;height:3px;background:var(--border)">
+        <div id="progressBar" style="height:100%;width:0%;background:var(--red);transition:width 0.3s ease"></div>
+      </div>
+
+      <div class="idle-screen" id="idleScreen">
+        <div class="big-icon">
+          <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+        </div>
+        <p>Enter your API key, search query, and channel identifier — then excavate.</p>
+      </div>
+
+      <div class="comments-area" id="commentsArea"></div>
+    </div>
+
+    <!-- ── ACTIVITY TAB ── -->
+    <div id="panelActivity" style="display:none;flex-direction:column;flex:1;overflow:hidden">
+      <div class="activity-meta-bar">
+        <div class="result-meta" id="activityMeta" style="font-family:var(--mono);font-size:0.72rem;color:var(--muted)">
+          Requires a <strong style="color:var(--text)">Channel ID</strong> (UCxxxxxx) — display names are not supported by the Activities API.
+        </div>
+        <button class="load-activity-btn" id="loadActivityBtn" onclick="loadActivity()">
+          <div class="spinner"></div>
+          <span class="btn-label">◈ Load Activity</span>
+        </button>
+      </div>
+
+      <div class="idle-screen" id="activityIdle">
+        <div class="big-icon">
+          <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+            <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>
+          </svg>
+        </div>
+        <p>Enter a Channel ID in the sidebar and click Load Activity to fetch the channel's public activity feed.</p>
+      </div>
+
+      <div class="activity-area" id="activityArea"></div>
+    </div>
+
+  </main>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+// ─── State ──────────────────────────────────────────────────────────────────
+let allResults = []; // { video, comment }[]
+let logLines   = [];
+
+// Quota tracking
+const QUOTA_COSTS = { search: 100, commentThreads: 1, activities: 1, videos: 1 };
+const QUOTA_DAILY = 10000;
+let quotaSession = { total: 0, search: 0, commentThreads: 0, activities: 0, other: 0 };
+
+
+// ─── Logging ────────────────────────────────────────────────────────────────
+function log(type, msg) {
+  logLines.push({ type, msg });
+  const panel = document.getElementById('statusPanel');
+  panel.classList.add('visible');
+  panel.innerHTML = logLines.map(l =>
+    `<div class="log-line"><span class="tag tag-${l.type}">[${l.type.toUpperCase()}]</span><span>${escHtml(l.msg)}</span></div>`
+  ).join('');
+  panel.scrollTop = panel.scrollHeight;
+}
+
+function clearLog() {
+  logLines = [];
+  const panel = document.getElementById('statusPanel');
+  panel.innerHTML = '';
+  panel.classList.remove('visible');
+}
+
+function toast(msg) {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.classList.add('visible');
+  setTimeout(() => el.classList.remove('visible'), 5000);
+}
+
+// ─── YouTube API helpers ─────────────────────────────────────────────────────
+function trackQuota(endpoint) {
+  const cost = QUOTA_COSTS[endpoint] ?? 1;
+  quotaSession.total += cost;
+  if (endpoint in quotaSession) quotaSession[endpoint] += cost;
+  else quotaSession.other += cost;
+  renderQuotaCounter();
+}
+
+function renderQuotaCounter() {
+  const { total, search, commentThreads, activities, other } = quotaSession;
+  const pct = Math.min((total / QUOTA_DAILY) * 100, 100);
+
+  const numEl  = document.getElementById('quotaUsedNum');
+  const fill   = document.getElementById('quotaFill');
+  const breakdown = document.getElementById('quotaBreakdown');
+
+  numEl.textContent = total.toLocaleString();
+  numEl.className = 'quota-number' +
+    (pct >= 80 ? ' danger' : pct >= 50 ? ' warn' : '');
+
+  fill.style.width = pct + '%';
+  fill.style.background = pct >= 80 ? 'var(--red)' : pct >= 50 ? 'var(--amber)' : 'var(--green)';
+
+  const lines = [];
+  if (search)         lines.push(`Search calls: <span>${search} u</span>`);
+  if (commentThreads) lines.push(`Comment pages: <span>${commentThreads} u</span>`);
+  if (activities)     lines.push(`Activity calls: <span>${activities} u</span>`);
+  if (other)          lines.push(`Other: <span>${other} u</span>`);
+  lines.push(`Of 10,000 daily limit: <span>${pct.toFixed(1)}%</span>`);
+  breakdown.innerHTML = lines.join('<br>');
+}
+
+function resetQuota() {
+  quotaSession = { total: 0, search: 0, commentThreads: 0, activities: 0, other: 0 };
+  document.getElementById('quotaUsedNum').textContent = '0';
+  document.getElementById('quotaUsedNum').className = 'quota-number';
+  document.getElementById('quotaFill').style.width = '0%';
+  document.getElementById('quotaFill').style.background = 'var(--green)';
+  document.getElementById('quotaBreakdown').textContent = 'No API calls made yet.';
+}
+
+async function ytFetch(endpoint, params, apiKey) {
+  const url = new URL(`https://www.googleapis.com/youtube/v3/${endpoint}`);
+  params.key = apiKey;
+  Object.entries(params).forEach(([k,v]) => url.searchParams.set(k, v));
+  const res = await fetch(url.toString());
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    const rawMsg = err?.error?.message || `HTTP ${res.status}`;
+    const msg = rawMsg.toLowerCase().includes('quota')
+      ? "You have exceeded your API key's daily quota limit. It will reset at midnight Pacific Time."
+      : rawMsg;
+    throw new Error(msg);
+  }
+  trackQuota(endpoint);
+  return res.json();
+}
+
+async function searchVideos(query, maxResults, apiKey) {
+  const results = [];
+  let pageToken = undefined;
+  while (results.length < maxResults) {
+    const batch = Math.min(50, maxResults - results.length);
+    const params = { part: 'snippet', q: query, type: 'video', maxResults: batch };
+    if (pageToken) params.pageToken = pageToken;
+    const data = await ytFetch('search', params, apiKey);
+    for (const item of (data.items || [])) {
+      results.push({
+        id: item.id.videoId,
+        title: item.snippet.title,
+        channelTitle: item.snippet.channelTitle,
+        publishedAt: item.snippet.publishedAt,
+        thumbnail: item.snippet.thumbnails?.medium?.url || item.snippet.thumbnails?.default?.url,
+      });
+    }
+    if (data.nextPageToken && results.length < maxResults) {
+      pageToken = data.nextPageToken;
+    } else break;
+  }
+  return results;
+}
+
+async function getComments(videoId, apiKey) {
+  const comments = [];
+  let pageToken = undefined;
+  try {
+    while (true) {
+      const params = { part: 'snippet', videoId, maxResults: 100, order: 'time' };
+      if (pageToken) params.pageToken = pageToken;
+      const data = await ytFetch('commentThreads', params, apiKey);
+      for (const item of (data.items || [])) {
+        const s = item.snippet.topLevelComment.snippet;
+        comments.push({
+          id: item.id,
+          authorName: s.authorDisplayName,
+          authorChannelId: s.authorChannelId?.value || '',
+          authorAvatar: s.authorProfileImageUrl,
+          text: s.textDisplay,
+          likeCount: s.likeCount,
+          publishedAt: s.publishedAt,
+        });
+      }
+      if (data.nextPageToken) pageToken = data.nextPageToken;
+      else break;
+    }
+  } catch(e) {
+    // Re-throw quota errors so they surface to the user via run()'s catch block.
+    if (e.message.toLowerCase().includes('quota')) throw e;
+    // For all other per-video errors (comments disabled, video unavailable, etc.)
+    // log a warning and allow the scan to continue with remaining videos.
+    const reason = e.message.includes('disabled') ? 'comments disabled' : e.message;
+    console.warn(`Skipping video ${videoId}: ${reason}`);
+  }
+  return comments;
+}
+
+// ─── Channel matching ─────────────────────────────────────────────────────────
+function matchesChannel(comment, channelInput) {
+  const input = channelInput.trim();
+  if (!input) return false;
+  if (input.startsWith('UC') && comment.authorChannelId === input) return true;
+  return comment.authorName.toLowerCase() === input.toLowerCase();
+}
+
+// ─── Concurrency pool ─────────────────────────────────────────────────────────
+// Runs `tasks` (array of async fns) with at most `limit` running at once.
+// `onDone(result, index)` is called as each task completes.
+async function pooled(tasks, limit, onDone) {
+  let idx = 0;
+  async function worker() {
+    while (idx < tasks.length) {
+      const i = idx++;
+      const result = await tasks[i]();
+      onDone(result, i);
+    }
+  }
+  const workers = Array.from({ length: Math.min(limit, tasks.length) }, worker);
+  await Promise.all(workers);
+}
+
+// ─── Live streaming helpers ───────────────────────────────────────────────────
+let liveVideoCount  = 0;
+let liveCommentCount = 0;
+let currentChannelLabel = '';
+
+function ensureCommentsAreaVisible() {
+  const area = document.getElementById('commentsArea');
+  if (!area.classList.contains('visible')) {
+    area.classList.add('visible');
+    document.getElementById('filterBar').style.display = 'flex';
+    document.getElementById('exportBtn').style.display = 'block';
+  }
+}
+
+function streamVideoSection(video, matched) {
+  if (matched.length === 0) return;
+  ensureCommentsAreaVisible();
+
+  const area = document.getElementById('commentsArea');
+  const vid = video.id;
+
+  // Insert or update section
+  let section = area.querySelector(`[data-video-id="${vid}"]`);
+  if (!section) {
+    section = document.createElement('div');
+    section.className = 'video-section';
+    section.dataset.videoId = vid;
+    section.innerHTML = `
+      <div class="video-section-header" onclick="toggleSection(this)">
+        <img class="video-thumb" src="${escHtml(video.thumbnail)}" alt="" loading="lazy">
+        <div class="video-info">
+          <div class="video-title">${escHtml(video.title)}</div>
+          <div class="video-meta-line">${escHtml(video.channelTitle)} · ${fmtDate(video.publishedAt)}</div>
+        </div>
+        <span class="video-comment-count" id="vcc-${escHtml(vid)}">0 comments</span>
+        <svg class="chevron" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M6 9l6 6 6-6"/></svg>
+      </div>
+      <ul class="comments-list" data-video="${escHtml(vid)}"></ul>
+    `;
+    area.appendChild(section);
+    liveVideoCount++;
+  }
+
+  const list = section.querySelector('.comments-list');
+  for (const c of matched) {
+    list.insertAdjacentHTML('beforeend', commentHTML(c, vid));
+    allResults.push({ video, comment: c });
+    liveCommentCount++;
+  }
+
+  // Update count badge
+  const badge = section.querySelector(`#vcc-${vid}`);
+  if (badge) {
+    const n = list.querySelectorAll('.comment-item').length;
+    badge.textContent = `${n} comment${n !== 1 ? 's' : ''}`;
+  }
+
+  updateResultMeta();
+}
+
+function updateResultMeta() {
+  document.getElementById('resultMeta').innerHTML =
+    `<strong>${liveCommentCount}</strong> comment${liveCommentCount !== 1 ? 's' : ''} ` +
+    `from <strong>${escHtml(currentChannelLabel)}</strong> ` +
+    `across <strong>${liveVideoCount}</strong> video${liveVideoCount !== 1 ? 's' : ''} ` +
+    `<span style="color:var(--muted);font-size:0.7em">· scanning…</span>`;
+}
+
+// ─── Max videos helpers ───────────────────────────────────────────────────────
+function getMaxVideos() {
+  const sel = document.getElementById('maxVideos').value;
+  if (sel === 'custom') {
+    const v = parseInt(document.getElementById('maxVideosCustom').value);
+    return isNaN(v) ? 25 : Math.min(Math.max(v, 1), 2000);
+  }
+  return parseInt(sel);
+}
+
+function updateQuotaEstimate() {
+  const sel = document.getElementById('maxVideos');
+  const customInput = document.getElementById('maxVideosCustom');
+  customInput.style.display = sel.value === 'custom' ? 'block' : 'none';
+
+  const n = getMaxVideos();
+  // Search costs: ceil(n/50) pages × 100 units each
+  const searchCost = Math.ceil(n / 50) * 100;
+  // Comment fetch: roughly 1 unit per page of 100 comments; assume avg 3 pages/video
+  const commentEst = n * 3;
+  const total = searchCost + commentEst;
+
+  document.getElementById('quotaEst').textContent =
+    `~${total.toLocaleString()} units / 10,000 daily`;
+  document.getElementById('quotaWarn').style.display = total > 7000 ? 'inline' : 'none';
+}
+
+// ─── Main run ─────────────────────────────────────────────────────────────────
+async function run() {
+  const apiKey       = document.getElementById('apiKey').value.trim();
+  const query        = document.getElementById('searchQuery').value.trim();
+  const maxVideos    = getMaxVideos();
+  const channelInput = document.getElementById('channelInput').value.trim();
+  const concurrency  = parseInt(document.getElementById('concurrency').value);
+
+  if (!apiKey)       { toast('Please enter your YouTube API key.'); return; }
+  if (!query)        { toast('Please enter a search query.'); return; }
+  if (!channelInput) { toast('Please enter a channel ID or display name.'); return; }
+
+  // Reset
+  allResults = [];
+  liveVideoCount = 0;
+  liveCommentCount = 0;
+  currentChannelLabel = channelInput;
+  clearLog();
+
+  document.getElementById('idleScreen').style.display = 'none';
+  document.getElementById('commentsArea').classList.remove('visible');
+  document.getElementById('commentsArea').innerHTML = '';
+  document.getElementById('filterBar').style.display = 'none';
+  document.getElementById('exportBtn').style.display = 'none';
+  document.getElementById('resultMeta').textContent = 'Working…';
+  document.getElementById('progressWrap').style.display = 'block';
+  document.getElementById('progressBar').style.width = '0%';
+
+  const btn = document.getElementById('runBtn');
+  btn.disabled = true;
+  btn.classList.add('loading');
+
+  try {
+    log('info', `Searching YouTube for "${query}"…`);
+    const videos = await searchVideos(query, maxVideos, apiKey);
+    log('ok', `Found ${videos.length} video${videos.length !== 1 ? 's' : ''}. Scanning with ${concurrency} parallel workers…`);
+
+    let done = 0;
+
+    const tasks = videos.map((video, i) => async () => {
+      log('info', `[${i+1}/${videos.length}] ${video.title.slice(0, 50)}…`);
+      const comments = await getComments(video.id, apiKey);
+      const matched  = comments.filter(c => matchesChannel(c, channelInput));
+      if (matched.length > 0) {
+        log('ok', `  ↳ ${matched.length} hit${matched.length !== 1 ? 's' : ''} — ${video.title.slice(0, 40)}`);
+      }
+      return { video, matched };
+    });
+
+    await pooled(tasks, concurrency, ({ video, matched }, i) => {
+      done++;
+      const pct = Math.round((done / videos.length) * 100);
+      document.getElementById('progressBar').style.width = pct + '%';
+      streamVideoSection(video, matched);
+    });
+
+    document.getElementById('progressWrap').style.display = 'none';
+
+    if (liveCommentCount === 0) {
+      log('warn', `No comments found from "${channelInput}" across ${videos.length} videos.`);
+      document.getElementById('resultMeta').textContent = 'No comments found.';
+      document.getElementById('idleScreen').style.display = 'flex';
+      document.getElementById('idleScreen').querySelector('p').textContent =
+        `No comments from "${channelInput}" were found in these ${videos.length} videos. Try a broader search or check the channel name.`;
+    } else {
+      log('ok', `Done. ${liveCommentCount} comment${liveCommentCount !== 1 ? 's' : ''} across ${liveVideoCount} video${liveVideoCount !== 1 ? 's' : ''}.`);
+      // Final meta — remove "scanning…" suffix
+      document.getElementById('resultMeta').innerHTML =
+        `<strong>${liveCommentCount}</strong> comment${liveCommentCount !== 1 ? 's' : ''} ` +
+        `from <strong>${escHtml(channelInput)}</strong> ` +
+        `across <strong>${liveVideoCount}</strong> video${liveVideoCount !== 1 ? 's' : ''}`;
+    }
+
+  } catch(e) {
+    log('err', e.message);
+    toast('API Error: ' + e.message);
+    document.getElementById('resultMeta').textContent = 'Error — see log.';
+    document.getElementById('progressWrap').style.display = 'none';
+    if (liveCommentCount === 0) document.getElementById('idleScreen').style.display = 'flex';
+  }
+
+  btn.disabled = false;
+  btn.classList.remove('loading');
+}
+
+
+function commentHTML(c, videoId) {
+  return `
+    <li class="comment-item" data-likes="${c.likeCount}" data-date="${c.publishedAt}" data-text="${escHtml(c.text)}">
+      <img class="avatar" src="${escHtml(c.authorAvatar)}" alt="" loading="lazy">
+      <div class="comment-body">
+        <div class="comment-author">${escHtml(c.authorName)}</div>
+        <div class="comment-text">${c.text}</div>
+        <div class="comment-footer">
+          <span class="comment-date">${fmtDate(c.publishedAt)}</span>
+          ${c.likeCount > 0 ? `<span class="like-badge"><svg viewBox="0 0 24 24"><path d="M14 9V5a3 3 0 0 0-3-3l-4 9v11h11.28a2 2 0 0 0 2-1.7l1.38-9a2 2 0 0 0-2-2.3H14z"/><path d="M7 22H4a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2h3"/></svg>${c.likeCount}</span>` : ''}
+          <a class="video-link" href="https://www.youtube.com/watch?v=${escHtml(videoId)}&lc=${escHtml(c.id)}" target="_blank">↗ view on YT</a>
+        </div>
+      </div>
+    </li>
+  `;
+}
+
+function toggleSection(header) {
+  header.closest('.video-section').classList.toggle('collapsed');
+}
+
+// ─── Filter & Sort ────────────────────────────────────────────────────────────
+function filterComments() {
+  const q = document.getElementById('filterInput').value.toLowerCase();
+  document.querySelectorAll('.comment-item').forEach(el => {
+    const text = (el.dataset.text || '').toLowerCase();
+    el.style.display = text.includes(q) ? '' : 'none';
+  });
+}
+
+function sortComments() {
+  const order = document.getElementById('sortSelect').value;
+  document.querySelectorAll('.comments-list').forEach(list => {
+    const items = [...list.querySelectorAll('.comment-item')];
+    items.sort((a, b) => {
+      if (order === 'likes')   return parseInt(b.dataset.likes||0) - parseInt(a.dataset.likes||0);
+      if (order === 'oldest')  return new Date(a.dataset.date) - new Date(b.dataset.date);
+      return new Date(b.dataset.date) - new Date(a.dataset.date);
+    });
+    items.forEach(i => list.appendChild(i));
+  });
+}
+
+// ─── Export ───────────────────────────────────────────────────────────────────
+function exportResults() {
+  const channel = document.getElementById('channelInput').value.trim();
+  const query   = document.getElementById('searchQuery').value.trim();
+
+  const rows = allResults.map(({ video, comment }) => `
+    <tr>
+      <td><a href="https://www.youtube.com/watch?v=${escHtml(video.id)}" target="_blank">${escHtml(video.title)}</a></td>
+      <td>${escHtml(comment.publishedAt?.slice(0,10) || '')}</td>
+      <td>${escHtml(comment.text)}</td>
+      <td>${comment.likeCount}</td>
+      <td><a href="https://www.youtube.com/watch?v=${escHtml(video.id)}&lc=${escHtml(comment.id)}" target="_blank">Link</a></td>
+    </tr>
+  `).join('');
+
+  const html = `<!DOCTYPE html>
+<html><head><meta charset="UTF-8">
+<title>Comments by ${escHtml(channel)}</title>
+<style>
+  body { font-family: sans-serif; padding: 32px; background: #fff; color: #111; }
+  h1 { margin-bottom: 8px; }
+  p  { color: #666; margin-bottom: 24px; font-size: 0.875rem; }
+  table { border-collapse: collapse; width: 100%; font-size: 0.85rem; }
+  th { background: #111; color: #fff; padding: 10px 14px; text-align: left; }
+  td { padding: 10px 14px; border-bottom: 1px solid #eee; vertical-align: top; }
+  tr:nth-child(even) td { background: #f9f9f9; }
+  a { color: #c00; }
+</style>
+</head><body>
+<h1>Comments by "${escHtml(channel)}"</h1>
+<p>Search query: "${escHtml(query)}" · ${allResults.length} comment${allResults.length !== 1 ? 's' : ''} · Exported ${new Date().toLocaleString()}</p>
+<table>
+  <thead><tr><th>Video</th><th>Date</th><th>Comment</th><th>Likes</th><th>Link</th></tr></thead>
+  <tbody>${rows}</tbody>
+</table>
+</body></html>`;
+
+  const blob = new Blob([html], { type: 'text/html' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `comments-${channel.replace(/\s+/g,'-')}.html`;
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+
+// ─── Utilities ────────────────────────────────────────────────────────────────
+function escHtml(str) {
+  return String(str||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+function fmtDate(iso) {
+  if (!iso) return '';
+  return new Date(iso).toLocaleDateString(undefined, { year:'numeric', month:'short', day:'numeric' });
+}
+
+// ─── Tab switching ────────────────────────────────────────────────────────────
+function switchTab(tab) {
+  const isComments = tab === 'comments';
+  document.getElementById('tabComments').classList.toggle('active', isComments);
+  document.getElementById('tabActivity').classList.toggle('active', !isComments);
+  document.getElementById('panelComments').style.display = isComments ? 'flex' : 'none';
+  document.getElementById('panelActivity').style.display = isComments ? 'none' : 'flex';
+}
+
+// ─── Activity feed ────────────────────────────────────────────────────────────
+const ACTIVITY_TYPE_META = {
+  upload:      { label: 'Upload',      icon: '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/>' },
+  like:        { label: 'Liked',       icon: '<path d="M14 9V5a3 3 0 0 0-3-3l-4 9v11h11.28a2 2 0 0 0 2-1.7l1.38-9a2 2 0 0 0-2-2.3H14z"/><path d="M7 22H4a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2h3"/>' },
+  favorite:    { label: 'Favorited',   icon: '<polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>' },
+  playlistItem:{ label: 'Added to Playlist', icon: '<line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/>' },
+  subscription:{ label: 'Subscribed', icon: '<path d="M22 10v6M2 10l10-5 10 5-10 5z"/><path d="M6 12v5c3 3 9 3 12 0v-5"/>' },
+  recommendation:{ label: 'Recommended', icon: '<circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>' },
+  channelItem: { label: 'Channel Item', icon: '<rect x="2" y="7" width="20" height="15" rx="2"/><polyline points="17 2 12 7 7 2"/>' },
+};
+
+function activityTypeClass(type) {
+  if (type === 'upload')       return 'act-upload';
+  if (type === 'like' || type === 'favorite') return 'act-like';
+  if (type === 'subscription') return 'act-sub';
+  if (type === 'playlistItem') return 'act-playlist';
+  return 'act-other';
+}
+
+function activityItemHTML(item) {
+  const type    = item.snippet.type;
+  const date    = item.snippet.publishedAt;
+  const meta    = ACTIVITY_TYPE_META[type] || { label: type, icon: '<circle cx="12" cy="12" r="10"/>' };
+  const cls     = activityTypeClass(type);
+  const details = item.snippet[type] || {};
+
+  // Extract title, videoId, thumbnail from whichever sub-object is populated
+  const title     = details.videoTitle   || details.playlistTitle  || details.resourceId?.channelId || '—';
+  const videoId   = details.resourceId?.videoId   || details.videoId   || null;
+  const thumb     = details.thumbnails?.medium?.url || details.thumbnails?.default?.url || null;
+  const channelId = details.resourceId?.channelId || null;
+
+  const linkHref = videoId
+    ? `https://www.youtube.com/watch?v=${escHtml(videoId)}`
+    : channelId
+      ? `https://www.youtube.com/channel/${escHtml(channelId)}`
+      : null;
+
+  return `
+    <div class="activity-item ${cls}">
+      <div class="activity-icon">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${meta.icon}</svg>
+      </div>
+      <div>
+        <div class="activity-title">
+          ${linkHref ? `<a href="${linkHref}" target="_blank">${escHtml(title)}</a>` : escHtml(title)}
+        </div>
+        <div class="activity-sub">${fmtDate(date)}</div>
+        <span class="activity-type-tag">${meta.label}</span>
+        ${thumb ? `<img class="act-thumb" src="${escHtml(thumb)}" alt="" loading="lazy">` : ''}
+      </div>
+    </div>
+  `;
+}
+
+async function loadActivity() {
+  const apiKey  = document.getElementById('apiKey').value.trim();
+  const channel = document.getElementById('channelInput').value.trim();
+
+  if (!apiKey)   { toast('Please enter your YouTube API key.'); return; }
+  if (!channel)  { toast('Please enter a Channel ID in the sidebar.'); return; }
+  if (!channel.startsWith('UC')) {
+    toast('Activities require a Channel ID starting with "UC". Display names are not supported here.');
+    return;
+  }
+
+  const btn = document.getElementById('loadActivityBtn');
+  btn.disabled = true;
+  btn.classList.add('loading');
+  document.getElementById('activityMeta').innerHTML = 'Fetching activity…';
+  document.getElementById('activityIdle').style.display = 'none';
+  document.getElementById('activityArea').classList.remove('visible');
+  document.getElementById('activityArea').innerHTML = '';
+
+  try {
+    const items = [];
+    let pageToken;
+
+    // Fetch up to 5 pages (250 items) — the API caps at 50/page
+    for (let p = 0; p < 5; p++) {
+      const params = { part: 'snippet,contentDetails', channelId: channel, maxResults: 50 };
+      if (pageToken) params.pageToken = pageToken;
+      const data = await ytFetch('activities', params, apiKey);
+      items.push(...(data.items || []));
+      if (data.nextPageToken) pageToken = data.nextPageToken;
+      else break;
+    }
+
+    if (items.length === 0) {
+      document.getElementById('activityMeta').textContent = 'No public activity found for this channel.';
+      document.getElementById('activityIdle').style.display = 'flex';
+      document.getElementById('activityIdle').querySelector('p').textContent =
+        'This channel has no public activity, or the Channel ID is incorrect.';
+    } else {
+      const area = document.getElementById('activityArea');
+      area.innerHTML = items.map(activityItemHTML).join('');
+      area.classList.add('visible');
+
+      // Count by type
+      const counts = {};
+      items.forEach(i => { const t = i.snippet.type; counts[t] = (counts[t]||0)+1; });
+      const summary = Object.entries(counts)
+        .map(([t,n]) => `${n} ${ACTIVITY_TYPE_META[t]?.label || t}`)
+        .join(' · ');
+      document.getElementById('activityMeta').innerHTML =
+        `<strong>${items.length}</strong> activities — ${summary}`;
+    }
+  } catch(e) {
+    toast('API Error: ' + e.message);
+    document.getElementById('activityMeta').textContent = 'Error: ' + e.message;
+    document.getElementById('activityIdle').style.display = 'flex';
+  }
+
+  btn.disabled = false;
+  btn.classList.remove('loading');
+}
+
+
+document.addEventListener('keydown', e => {
+  if (e.key === 'Enter' && ['apiKey','searchQuery','channelInput'].includes(e.target.id)) run();
+});
+
+updateQuotaEstimate();
+</script>
+</body>
+</html>
