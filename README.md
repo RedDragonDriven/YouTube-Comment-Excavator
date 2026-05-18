@@ -76,6 +76,12 @@ To request a free quota increase, use the form in [Google Cloud Console](https:/
 
 ---
 
+## Suggestions
+
+If you have ideas for features, improvements, or edge cases this tool doesn't handle well, feel free to open an issue. Feedback is welcome.
+
+---
+
 ## License
 
 This project is licensed under the [MIT License](https://mit-license.org/). You are free to use, copy, modify, merge, publish, distribute, and sublicense it, provided the original copyright notice is kept intact. See the `LICENSE` file for the full text.
